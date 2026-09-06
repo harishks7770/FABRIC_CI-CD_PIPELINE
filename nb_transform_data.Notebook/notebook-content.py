@@ -27,7 +27,7 @@ TargetLakehouse = "lh_sales_dev"
 
 #3.FINALE OF THE TESTING
 
-#4.FINAL TESTING BEFORE TRAIL END
+#4.FINAL TESTING BEFORE TRAIL 
 
 name="harihs"
 
