@@ -16,27 +16,34 @@ jobs:
         id: auth
         run: |
           echo "🔐 Attempting to get Azure access token..."
+          echo "Tenant ID: ${{ secrets.AZURE_TENANT_ID }}"
+          echo "Client ID: ${{ secrets.AZURE_CLIENT_ID }}"
           
-          RESPONSE=$(curl -s -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
-            -d "scope=https://api.fabric.microsoft.com/.default" \
-            -d "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
-            -d "grant_type=client_credentials")
+          TENANT="${{ secrets.AZURE_TENANT_ID }}"
+          CLIENT_ID="${{ secrets.AZURE_CLIENT_ID }}"
+          CLIENT_SECRET="${{ secrets.AZURE_CLIENT_SECRET }}"
           
-          echo "📨 Azure Response: $RESPONSE"
-          
-          TOKEN=$(echo "$RESPONSE" | jq -r '.access_token // empty')
-          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
-          
-          if [ ! -z "$ERROR" ]; then
-            echo "❌ Azure Error: $ERROR"
-            echo "Error Description: $(echo "$RESPONSE" | jq -r '.error_description // "No description"')"
+          if [ -z "$TENANT" ] || [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+            echo "❌ ERROR: Missing required secrets (AZURE_TENANT_ID, AZURE_CLIENT_ID, or AZURE_CLIENT_SECRET)"
             exit 1
           fi
           
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "❌ Failed to obtain Azure access token - no token in response"
+          echo "ℹ️  Sending request to: https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token"
+          
+          RESPONSE=$(curl -v -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=$CLIENT_ID" \
+            -d "scope=https://api.fabric.microsoft.com/.default" \
+            -d "client_secret=$CLIENT_SECRET" \
+            -d "grant_type=client_credentials" 2>&1)
+          
+          echo "📨 Azure Response:"
+          echo "$RESPONSE"
+          
+          TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+          
+          if [ -z "$TOKEN" ]; then
+            echo "❌ Failed to obtain Azure access token"
             exit 1
           fi
           
