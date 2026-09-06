@@ -15,15 +15,28 @@ jobs:
       - name: Get Azure Access Token
         id: auth
         run: |
-          TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+          echo "🔐 Attempting to get Azure access token..."
+          
+          RESPONSE=$(curl -s -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             -d "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
             -d "scope=https://api.fabric.microsoft.com/.default" \
             -d "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
-            -d "grant_type=client_credentials" | jq -r .access_token)
+            -d "grant_type=client_credentials")
+          
+          echo "📨 Azure Response: $RESPONSE"
+          
+          TOKEN=$(echo "$RESPONSE" | jq -r '.access_token // empty')
+          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
+          
+          if [ ! -z "$ERROR" ]; then
+            echo "❌ Azure Error: $ERROR"
+            echo "Error Description: $(echo "$RESPONSE" | jq -r '.error_description // "No description"')"
+            exit 1
+          fi
           
           if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "❌ Failed to obtain Azure access token"
+            echo "❌ Failed to obtain Azure access token - no token in response"
             exit 1
           fi
           
