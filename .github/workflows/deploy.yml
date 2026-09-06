@@ -16,55 +16,65 @@ jobs:
         id: auth
         run: |
           echo "🔐 Attempting to get Azure access token..."
-          echo "Tenant ID: ${{ secrets.AZURE_TENANT_ID }}"
-          echo "Client ID: ${{ secrets.AZURE_CLIENT_ID }}"
           
           TENANT="${{ secrets.AZURE_TENANT_ID }}"
           CLIENT_ID="${{ secrets.AZURE_CLIENT_ID }}"
           CLIENT_SECRET="${{ secrets.AZURE_CLIENT_SECRET }}"
           
+          echo "Tenant ID length: ${#TENANT}"
+          echo "Client ID length: ${#CLIENT_ID}"
+          echo "Client Secret length: ${#CLIENT_SECRET}"
+          
           if [ -z "$TENANT" ] || [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
-            echo "❌ ERROR: Missing required secrets (AZURE_TENANT_ID, AZURE_CLIENT_ID, or AZURE_CLIENT_SECRET)"
+            echo "❌ ERROR: Missing required secrets"
             exit 1
           fi
           
-          echo "ℹ️  Sending request to: https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token"
+          URL="https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token"
+          echo "Sending POST to: $URL"
           
-          RESPONSE=$(curl -v -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+          RESPONSE=$(curl -s -X POST "$URL" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "client_id=$CLIENT_ID" \
+            -d "client_id=${CLIENT_ID}" \
             -d "scope=https://api.fabric.microsoft.com/.default" \
-            -d "client_secret=$CLIENT_SECRET" \
-            -d "grant_type=client_credentials" 2>&1)
+            -d "client_secret=${CLIENT_SECRET}" \
+            -d "grant_type=client_credentials")
           
-          echo "📨 Azure Response:"
-          echo "$RESPONSE"
+          echo "Raw Response: $RESPONSE"
           
-          TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+          TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4 || echo "")
           
           if [ -z "$TOKEN" ]; then
             echo "❌ Failed to obtain Azure access token"
+            echo "Full Response: $RESPONSE"
             exit 1
           fi
           
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
-          echo "✅ Successfully obtained Azure access token"
+          echo "✅ Successfully obtained Azure access token (length: ${#TOKEN})"
 
       - name: Trigger Fabric Deployment
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://api.fabric.microsoft.com/v1/deploymentPipelines/${{ secrets.FABRIC_PIPELINE_ID }}/deploy \
-          -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "sourceStageId": "${{ secrets.FABRIC_SOURCE_STAGE_ID }}",
-            "targetStageId": "${{ secrets.FABRIC_TARGET_STAGE_ID }}",
-            "note": "Automated deployment from GitHub Actions"
-          }')
+          PIPELINE_ID="${{ secrets.FABRIC_PIPELINE_ID }}"
+          SOURCE_STAGE="${{ secrets.FABRIC_SOURCE_STAGE_ID }}"
+          TARGET_STAGE="${{ secrets.FABRIC_TARGET_STAGE_ID }}"
+          TOKEN="${{ steps.auth.outputs.token }}"
+          
+          echo "Deploying with Pipeline ID: $PIPELINE_ID"
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://api.fabric.microsoft.com/v1/deploymentPipelines/${PIPELINE_ID}/deploy" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"sourceStageId\": \"$SOURCE_STAGE\",
+              \"targetStageId\": \"$TARGET_STAGE\",
+              \"note\": \"Automated deployment from GitHub Actions\"
+            }")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
           BODY=$(echo "$RESPONSE" | sed '$d')
           
-          echo "📋 Deployment Response:"
+          echo "📋 Deployment Response (HTTP $HTTP_CODE):"
           echo "$BODY"
           
           if [ "$HTTP_CODE" -ne 202 ]; then
